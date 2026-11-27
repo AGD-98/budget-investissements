@@ -107,3 +107,12 @@ label.f { display: block; font-size: 12.5px; color: var(--muted); margin: 0 0 6p
 .search { margin-bottom: 12px; }
 .daygrp { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 14px 2px 4px; }
 .pending { opacity: .75; } .pending .d::after { content: " · en attente du PC"; color: var(--warn); }
+
+.ibtn { border: none; background: var(--card); border: 1px solid var(--line); width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; color: var(--muted); flex: none; }
+.ibtn svg { width: 19px; height: 19px; }
+.top .status { flex: none; }
+/* mode discret : montants floutés, touche pour révéler */
+body.discret .m, body.discret .big, body.discret .amount, body.discret .donut::after { filter: blur(9px); transition: filter .2s; }
+body.discret .m:active, body.discret .big:active { filter: none; }
+.top h1 { font-size: 23px; }
+body.discret .hero .muted span, body.discret .mini .dim span, body.discret .item .v { filter: blur(8px); }

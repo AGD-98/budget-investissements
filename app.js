@@ -3,7 +3,7 @@
    Saisies : chiffrées sur l'iPhone, déposées dans la feuille Google, intégrées par le PC. */
 (function () {
   'use strict';
-  const APP_V = '1.0.0';
+  const APP_V = '1.1.0';
   const C = window.Calc;
   const $ = (s, r) => (r || document).querySelector(s);
   const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -52,7 +52,13 @@
   };
   const standalone = () => window.navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
-  function appliquerTheme() { const t = LS.get('theme', 'auto'); document.documentElement.dataset.theme = t === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'clair' : 'sombre') : t; }
+  function themeEffectif() { const t = LS.get('theme', 'auto'); return t === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'clair' : 'sombre') : t; }
+  function appliquerTheme() {
+    const t = themeEffectif(); document.documentElement.dataset.theme = t;
+    const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = t === 'clair' ? '#f3f6fb' : '#0b1220';
+    document.body.classList.toggle('discret', !!LS.get('discret', false));
+  }
+  try { matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (LS.get('theme', 'auto') === 'auto') appliquerTheme(); }); } catch (e) { /* */ }
 
   // Code de connexion : ?c=… (QR code du PC) ou collé à la main
   function lireCode(code) {
@@ -186,7 +192,15 @@
   }
   function majStatut() { const el = $('#status'); if (el) el.outerHTML = statutHtml(); }
   function depuis(t) { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'à l’instant' : m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }); }
-  function top(titre, back, droite) { return `<header class="top">${back ? `<button class="back" data-a="back">‹</button>` : ''}<h1>${titre}</h1>${droite || ''}</header>`; }
+  const ICO_OEIL = '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>';
+  const ICO_OEIL_BARRE = '<path d="M3 3l18 18"/><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7a10.4 10.4 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>';
+  const ICO_SOLEIL = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+  const ICO_LUNE = '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>';
+  function outils() {
+    const disc = !!LS.get('discret', false);
+    return `<button class="ibtn" data-a="discret" aria-label="Masquer les montants">${svg(disc ? ICO_OEIL_BARRE : ICO_OEIL)}</button><button class="ibtn" data-a="basculer-theme" aria-label="Thème">${svg(themeEffectif() === 'clair' ? ICO_LUNE : ICO_SOLEIL)}</button>`;
+  }
+  function top(titre, back, droite) { return `<header class="top">${back ? `<button class="back" data-a="back">‹</button>` : ''}<h1>${titre}</h1>${droite || ''}${back ? '' : outils()}</header>${majDispo ? `<div class="banner" style="margin:0 16px 12px" data-a="appliquer-maj">✨ Nouvelle version de l’app (${esc(majDispo)}) : touche ici pour l’installer.</div>` : ''}`; }
   const barre = (pct, cls) => `<div class="bar"><i class="${cls || ''}" style="width:${Math.max(0, Math.min(100, pct * 100)).toFixed(1)}%"></i></div>`;
   const ring = (p, label, col) => `<div class="ring" style="background:conic-gradient(${col || 'var(--acc)'} ${(Math.max(0, Math.min(1, p)) * 100).toFixed(1)}%, var(--card2) 0)" data-l="${esc(label)}"></div>`;
   const PAL = ['#3b82f6', '#22d3ee', '#34d399', '#fbbf24', '#f472b6', '#a78bfa', '#fb7185', '#2dd4bf', '#fb923c', '#a3e635'];
@@ -373,6 +387,9 @@
       <div class="card"><h2>Apparence</h2><div class="seg" style="margin:0">${[['auto', 'Auto'], ['sombre', 'Sombre'], ['clair', 'Clair']].map(([k, l]) => `<button class="${t === k ? 'on' : ''}" data-a="theme" data-v="${k}">${l}</button>`).join('')}</div></div>
       <div class="card"><h2>Sécurité</h2><div class="dim" style="font-size:13px;margin-bottom:10px">Tes données sont chiffrées avec ton mot de passe avant de passer par Google. Sur cet iPhone, elles restent dans le stockage de l’app.</div>
         <button class="btn" data-a="verrouiller">Oublier le mot de passe</button><button class="btn danger" style="margin-top:8px" data-a="deconnecter">Déconnecter cet iPhone</button></div>
+      <div class="card"><h2>Confidentialité</h2><div class="between"><span>Masquer les montants<div class="dim" style="font-size:12px">aussi avec l’œil en haut de l’écran</div></span><button class="btn small ${LS.get('discret', false) ? 'primary' : ''}" data-a="discret">${LS.get('discret', false) ? 'Activé' : 'Désactivé'}</button></div></div>
+      <div class="card"><h2>Version de l’app</h2><div class="item"><div class="t"><b>Version installée : ${APP_V}</b><div class="d">${majDispo ? 'Nouvelle version disponible : ' + esc(majDispo) : 'Mise à jour automatique à chaque ouverture'}</div></div></div>
+        <button class="btn ${majDispo ? 'primary' : ''}" style="margin-top:8px" data-a="${majDispo ? 'appliquer-maj' : 'verifier-maj'}">${majDispo ? 'Installer la version ' + esc(majDispo) : 'Vérifier les mises à jour'}</button></div>
       <div class="dim" style="font-size:12px;text-align:center">App iPhone ${APP_V} · Budget & Investissements</div></div>`;
   }
 
@@ -447,6 +464,10 @@
     'maj-solde': el => { st.form = { type: 'solde', compte: el.dataset.id, date: C.todayISO() }; aller('saisir'); },
     'abo-paye': async el => { const a = st.data.abonnements.find(x => x.id === el.dataset.id); if (!a) return; if (!(await confirmer(`${a.nom} payé ?`, `${E(a.montant)} seront ajoutés au budget${a.categorie ? ` (« ${a.categorie} »)` : ''} et la prochaine échéance sera décalée.`, 'Oui, payé'))) return; await ajouterOp({ t: 'abo', abo: a.id, date: a.prochaine || C.todayISO() }); toast('Abonnement payé ✓'); rendre(); },
     theme: el => { LS.set('theme', el.dataset.v); rendre(); },
+    'basculer-theme': () => { LS.set('theme', themeEffectif() === 'clair' ? 'sombre' : 'clair'); rendre(); toast(themeEffectif() === 'clair' ? 'Thème clair' : 'Thème sombre'); },
+    discret: () => { const v = !LS.get('discret', false); LS.set('discret', v); rendre(); toast(v ? 'Montants masqués 🙈' : 'Montants visibles'); },
+    'verifier-maj': () => verifierMaj(true),
+    'appliquer-maj': () => appliquerMaj(),
     verrouiller: async () => { if (!(await confirmer('Oublier le mot de passe', 'Il faudra le retaper à la prochaine ouverture. Tes saisies en attente sont conservées.', 'Oublier'))) return; st.key = null; await idb.del('key'); st.data = null; rendre(); },
     deconnecter: async () => { if (!(await confirmer('Déconnecter cet iPhone', 'Les données et les saisies pas encore envoyées seront effacées de cet iPhone.', 'Déconnecter'))) return; ['cfg', 'ver', 'ops', 'snapEnc', 'syncAt', 'serverAt'].forEach(k => LS.del(k)); await idb.del('key'); location.replace(location.pathname); },
     'copier-code': async () => { try { await navigator.clipboard.writeText(new URLSearchParams(location.search).get('c') || ''); toast('Code copié'); } catch (e) { toast('Copie impossible', true); } },
@@ -483,6 +504,28 @@
   setInterval(() => { if (!document.hidden) synchroniser(); }, 90e3);
   setInterval(() => { if (!document.hidden && ['accueil'].includes(st.route)) majStatut(); }, 30e3);
 
+  // ---------- Mise à jour automatique de l'app ----------
+  let majDispo = null;
+  async function verifierMaj(manuel) {
+    if (location.protocol !== 'https:' && !manuel) return;
+    try {
+      const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status);
+      const v = (await r.json()).v;
+      if (v && v !== APP_V) {
+        majDispo = v;
+        if (st.route !== 'saisir' && !document.querySelector('.sheet-back')) return appliquerMaj(); // automatique quand rien n'est en cours
+        rendre();
+      } else if (manuel) toast('Tu as la dernière version (' + APP_V + ')');
+    } catch (e) { if (manuel) toast('Vérification impossible (hors ligne ?)', true); }
+  }
+  async function appliquerMaj() {
+    LS.set('majDe', APP_V);
+    try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } catch (e) { /* */ }
+    try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.update())); } catch (e) { /* */ }
+    location.reload();
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) verifierMaj(); });
+
   // ---------- Démarrage ----------
   async function demarrer() {
     appliquerTheme();
@@ -492,6 +535,8 @@
     if (st.key && LS.get('snapEnc', null)) { try { st.snap = JSON.parse(await dechiffrer(st.key, LS.get('snapEnc'))); } catch (e) { st.snap = null; } }
     nettoyerOps(); reconstruire(); rendre();
     if (st.key) synchroniser();
+    const de = LS.get('majDe', null); if (de && de !== APP_V) { LS.del('majDe'); setTimeout(() => toast('✅ App mise à jour : version ' + APP_V), 600); }
+    verifierMaj();
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }
