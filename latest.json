@@ -1,0 +1,8 @@
+{
+  "version": "2.6.0",
+  "file": "Budget-Investissements-Setup-2.6.0.exe",
+  "size": 85865453,
+  "sha256": "72eed133e3f6ef9358ebebb8383f3eb89f7524401f74ea52da890afe7731bf4a",
+  "date": "2026-11-27T23:28:13.360Z",
+  "notes": "Nouveau : un assistant IA 100 % local (questions en français, saisie en une phrase, import de relevé bancaire CSV/OFX/QIF classé automatiquement, règles apprises), aussi sur l'iPhone. Journal : les revenus ne gonflent plus le total des dépenses."
+}
