@@ -116,3 +116,4 @@ body.discret .m, body.discret .big, body.discret .amount, body.discret .donut::a
 body.discret .m:active, body.discret .big:active { filter: none; }
 .top h1 { font-size: 23px; }
 body.discret .hero .muted span, body.discret .mini .dim span, body.discret .item .v { filter: blur(8px); }
+body.discret .hero .muted, body.discret .mini .dim, body.discret .pa .d, body.discret .legend .v, body.discret .dz { filter: blur(8px); }
