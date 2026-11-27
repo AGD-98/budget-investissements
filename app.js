@@ -3,7 +3,7 @@
    Saisies : chiffrées sur l'iPhone, déposées dans la feuille Google, intégrées par le PC. */
 (function () {
   'use strict';
-  const APP_V = '1.1.1';
+  const APP_V = '1.2.0';
   const C = window.Calc;
   const $ = (s, r) => (r || document).querySelector(s);
   const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -48,7 +48,8 @@
   const st = {
     cfg: LS.get('cfg', null), key: null, snap: null, ver: LS.get('ver', null), ops: LS.get('ops', []),
     data: null, comp: null, sync: { at: LS.get('syncAt', null), serverAt: LS.get('serverAt', null), err: null, busy: false },
-    route: 'accueil', params: {}, hist: [], month: null, form: { type: 'dep' }, q: ''
+    route: 'accueil', params: {}, hist: [], month: null, form: { type: 'dep' }, q: '',
+    ia: { msgs: LS.get('iaMsgs', []).slice(-40), etat: {} }
   };
   const standalone = () => window.navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -146,6 +147,8 @@
     } else if (op.t === 'solde') {
       const c = d.comptes.find(x => x.id === op.compte); if (!c) return;
       c.releves = c.releves.filter(x => x.date !== op.date); c.releves.push({ date: op.date, solde: C.round2(C.num(op.solde)) });
+    } else if (op.t === 'regle') {
+      if (C.IA && op.motif && op.cat) C.IA.apprendre(d, op.motif, op.cat);
     } else if (op.t === 'abo') {
       const ab = d.abonnements.find(x => x.id === op.abo); if (!ab) return;
       const dt = ab.prochaine || C.todayISO(), k = d.months[C.isoToKey(dt)] ? C.isoToKey(dt) : moisCible(d), m = d.months[k];
@@ -195,10 +198,11 @@
   const ICO_OEIL = '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>';
   const ICO_OEIL_BARRE = '<path d="M3 3l18 18"/><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7a10.4 10.4 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>';
   const ICO_SOLEIL = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+ const ICO_IA = '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>';
   const ICO_LUNE = '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>';
   function outils() {
     const disc = !!LS.get('discret', false);
-    return `<button class="ibtn" data-a="discret" aria-label="Masquer les montants">${svg(disc ? ICO_OEIL_BARRE : ICO_OEIL)}</button><button class="ibtn" data-a="basculer-theme" aria-label="Thème">${svg(themeEffectif() === 'clair' ? ICO_LUNE : ICO_SOLEIL)}</button>`;
+    return `<button class="ibtn ia" data-go="assistant" aria-label="Assistant">${svg(ICO_IA)}</button><button class="ibtn" data-a="discret" aria-label="Masquer les montants">${svg(disc ? ICO_OEIL_BARRE : ICO_OEIL)}</button><button class="ibtn" data-a="basculer-theme" aria-label="Thème">${svg(themeEffectif() === 'clair' ? ICO_LUNE : ICO_SOLEIL)}</button>`;
   }
   function top(titre, back, droite) { return `<header class="top">${back ? `<button class="back" data-a="back">‹</button>` : ''}<h1>${titre}</h1>${droite || ''}${back ? '' : outils()}</header>${majDispo ? `<div class="banner" style="margin:0 16px 12px" data-a="appliquer-maj">✨ Nouvelle version de l’app (${esc(majDispo)}) : touche ici pour l’installer.</div>` : ''}`; }
   const barre = (pct, cls) => `<div class="bar"><i class="${cls || ''}" style="width:${Math.max(0, Math.min(100, pct * 100)).toFixed(1)}%"></i></div>`;
@@ -214,14 +218,15 @@
     const dern = d.depenses.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.saisi || '').localeCompare(a.saisi || '')).slice(0, 6);
     const ab = C.abonnementsResume(d, 14).prochains.slice(0, 4);
     const pat = C.patrimoine(d), pf = C.portefeuille(d.invest);
-    return top(`${salut}${st0.prenom ? ' ' + esc(st0.prenom) : ''}`, false, statutHtml()) + `<div class="view">
-      <div class="sub">${C.keyLong(ck)} · ${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+    return top(`${salut}${st0.prenom ? ' ' + esc(st0.prenom) : ''}`, false) + `<div class="view">
+      <div class="sub between"><span>${C.keyLong(ck)} · ${new Date().toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'long' })}</span>${statutHtml()}</div>
       <div class="card hero"><div class="muted" style="font-weight:600">Reste du mois</div><div class="big m ${r.remR < 0 ? 'neg' : ''}">${E0(r.remR)}</div>
         <div class="muted" style="font-size:13.5px">${r.remR >= r.remP ? `<span class="pos">▲ ${E0(r.remR - r.remP)}</span>` : `<span class="neg">▼ ${E0(r.remR - r.remP)}</span>`} vs prévu (${E0(r.remP)})</div>
         <div style="margin-top:14px">${barre(pctDep, pctDep > 1 ? 'over' : '')}<div class="between dim" style="font-size:12px;margin-top:6px"><span>${P(pctDep)} du budget dépensé</span><span>${jr ? jr + ' j restants' : 'mois terminé'}</span></div></div></div>
       ${pv && pv.joursRestants ? `<div class="grid2"><div class="mini"><div class="l">Fin de mois projetée</div><div class="v m ${pv.ecart < -C.num(st0.soldeTolere) ? 'warn' : ''}">${E0(pv.finProjetee)}</div><div class="dim" style="font-size:11.5px">${signe(pv.ecart)} vs prévu</div></div>
         <div class="mini"><div class="l">À dépenser par jour</div><div class="v m">${E(pv.parJour)}</div><div class="dim" style="font-size:11.5px">${E0(pv.budgetRestant)} de variable</div></div></div>` : ''}
       <div class="grid3"><div class="mini"><div class="l">Revenus</div><div class="v m pos">${E0(r.incR)}</div></div><div class="mini"><div class="l">Dépenses</div><div class="v m">${E0(r.expR)}</div></div><div class="mini"><div class="l">Épargne</div><div class="v m">${P(r.tauxEpargneR)}</div></div></div>
+      <div class="ask" data-go="assistant"><span>${svg(ICO_IA)}</span><span class="dim">Demande à ton assistant… « combien en restos ? »</span></div>
       ${pa.length ? `<div class="card pa"><h2>Points d’attention</h2>${pa.map(x => `<div class="item"><div class="chip ${x.niveau === 'info' ? '' : x.niveau}">${{ neg: '!', warn: '⚠︎', pos: '✓', info: 'i' }[x.niveau]}</div><div class="t"><div style="font-size:14px">${x.titre}</div><div class="d" style="white-space:normal">${esc(x.detail)}</div></div></div>`).join('')}</div>` : ''}
       <div class="card"><h2>Dernières dépenses<span class="r"><button class="link" data-go="journal">Tout voir</button></span></h2>${dern.length ? dern.map(ligneDep).join('') : '<div class="empty">Aucune dépense pour l’instant.</div>'}</div>
       ${ab.length ? `<div class="card"><h2>Prélèvements à venir</h2>${ab.map(x => `<div class="item"><div class="chip ${x.retard ? 'warn' : ''}">↻</div><div class="t"><b>${esc(x.a.nom)}</b><div class="d">${x.retard ? 'en retard · ' : ''}${C.isoFr(x.date)}</div></div><div class="v m">${E(x.a.montant)}</div></div>`).join('')}</div>` : ''}
@@ -229,9 +234,14 @@
         <div class="mini" data-go="comptes"><div class="l">Patrimoine net</div><div class="v m">${E0(pat.total)}</div><div class="dim" style="font-size:11.5px">${(d.comptes || []).filter(c => !c.archive).length} compte(s)</div></div></div>
       <div class="dim" style="font-size:11.5px;text-align:center;margin-top:8px">Données du PC du ${st.snap.at ? new Date(st.snap.at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '?'}</div></div>`;
   }
+  let revCache = null;
+  function estRevenu(cat) {
+    if (!revCache || revCache.d !== st.data) { const set = new Set(); Object.values(st.data.months || {}).forEach(m => ['income', 'schedule'].forEach(s => (m.sections[s] || []).forEach(l => set.add(l.label)))); revCache = { d: st.data, set }; }
+    return revCache.set.has(cat);
+  }
   function ligneDep(x) {
-    const neg = C.num(x.montant) < 0;
-    return `<div class="item ${x.pending ? 'pending' : ''}"><div class="chip ${neg ? 'pos' : ''}">${esc((x.cat || '?').slice(0, 1).toUpperCase())}</div><div class="t"><b>${esc(x.cat)}</b><div class="d">${C.isoFr(x.date)}${x.com ? ' · ' + esc(x.com) : ''}</div></div><div class="v m ${neg ? 'pos' : ''}">${E(x.montant)}</div></div>`;
+    const neg = C.num(x.montant) < 0 || estRevenu(x.cat);
+    return `<div class="item ${x.pending ? 'pending' : ''}"><div class="chip ${neg ? 'pos' : ''}">${esc((x.cat || '?').slice(0, 1).toUpperCase())}</div><div class="t"><b>${esc(x.cat)}</b><div class="d">${C.isoFr(x.date)}${x.com ? ' · ' + esc(x.com) : ''}</div></div><div class="v m ${neg ? 'pos' : ''}">${estRevenu(x.cat) ? '+' : ''}${E(x.montant)}</div></div>`;
   }
 
   // ---------- Budget du mois ----------
@@ -294,6 +304,7 @@
     const lab = { dep: 'Montant de la dépense', rev: 'Montant reçu', vers: 'Montant versé', solde: 'Nouveau solde' }[t];
     return top('Ajouter', true) + `<div class="view">
       <div class="seg">${[['dep', 'Dépense'], ['rev', 'Revenu'], ['vers', 'Versement'], ['solde', 'Solde']].map(([k, l]) => `<button class="${t === k ? 'on' : ''}" data-a="f-type" data-v="${k}">${l}</button>`).join('')}</div>
+      ${t === 'solde' ? '' : `<div class="phrase"><span>${svg(ICO_IA)}</span><input id="f-phrase" placeholder="En une phrase : « 23,50 sushi hier »" value="${esc(f.phrase || '')}" autocomplete="off" autocapitalize="off"></div>${f.phraseInfo ? `<div class="dim" style="font-size:12px;margin:-6px 0 10px 4px">${f.phraseInfo}</div>` : ''}`}
       <div class="amount-wrap"><label class="f" style="text-align:center;margin:0">${lab}</label><input class="amount m" id="f-mt" inputmode="decimal" placeholder="0,00 €" value="${esc(f.mt || '')}" autocomplete="off"></div>
       ${corps}
       <div class="grid2" style="margin-bottom:14px"><div><label class="f">Date</label><input type="date" id="f-date" value="${esc(f.date || C.todayISO())}"></div><div><label class="f">${t === 'solde' ? '&nbsp;' : 'Note'}</label>${t === 'solde' ? '' : `<input id="f-com" placeholder="facultatif" value="${esc(f.com || '')}">`}</div></div>
@@ -309,6 +320,8 @@
     if (f.type === 'dep' || f.type === 'rev') { if (!f.cat) return toast('Choisis une catégorie', true); op = { t: f.type, date, montant: C.round2(mt), cat: f.cat, com }; }
     else if (f.type === 'vers') { if (!f.ligne) return toast('Choisis une ligne', true); op = { t: 'vers', date, montant: C.round2(mt), ligne: f.ligne, com }; }
     else { if (!f.compte) return toast('Choisis un compte', true); op = { t: 'solde', date, solde: C.round2(mt), compte: f.compte }; }
+    // la phrase avait proposé une autre catégorie : l'assistant retient la correction
+    if (f.phraseCat && op.cat && f.phraseCat !== op.cat && com) await ajouterOp({ t: 'regle', motif: com, cat: op.cat });
     await ajouterOp(op);
     toast({ dep: 'Dépense ajoutée', rev: 'Revenu ajouté', vers: 'Versement ajouté', solde: 'Solde mis à jour' }[f.type] + ' ✓');
     st.form = { type: f.type, cat: f.cat, ligne: f.ligne, compte: f.compte };
@@ -330,6 +343,46 @@
       ${pea && pea.plafond && (pea.lignes || []).length ? `<div class="card"><h2>Plafond PEA</h2><div class="between" style="margin-bottom:8px"><span class="m"><b>${E0(pea.verse)}</b> <span class="dim">/ ${E0(pea.plafond)}</span></span><span>${P(pea.verse / pea.plafond, 1)}</span></div>${barre(pea.verse / pea.plafond)}</div>` : ''}
       <div class="card"><h2>Objectifs</h2>${objs.length ? objs.map(({ o, pr }) => { const e = pr.etat; return `<div class="item"><div>${ring(e.pct, P(e.pct), e.pct >= 1 ? 'var(--pos)' : null)}</div><div class="t"><b>${esc(o.emoji || '🎯')} ${esc(o.nom)}</b><div class="d m">${E0(e.actuel)} / ${E0(e.cible)}</div>
         <div class="dim" style="font-size:12px;white-space:normal">${e.pct >= 1 ? '<span class="pos">Atteint 🎉</span>' : pr.date ? `Atteint en ${C.keyLong(pr.date).toLowerCase()} au rythme de ${E0(pr.rythme)}/mois${pr.avance !== null ? (pr.avance >= 0 ? ` · <span class="pos">${pr.avance} mois d’avance</span>` : ` · <span class="warn">${-pr.avance} mois de retard</span>`) : ''}` : o.echeance && e.parMois ? `${E0(e.parMois)}/mois jusqu’au ${C.isoFr(o.echeance)}` : 'Indique un versement mensuel sur le PC pour la date prévue'}</div></div></div>`; }).join('') : '<div class="empty">Aucun objectif (à créer sur le PC).</div>'}</div></div>`;
+  }
+
+  // ---------- Assistant (IA locale) ----------
+  function barresIA(ch) {
+    if (!ch || !ch.items || !ch.items.length) return '';
+    const max = Math.max(...ch.items.map(i => Math.max(i.v, i.ref || 0)), 1);
+    return `<div class="ia-bars">${ch.items.map((i, j) => `<div class="ia-bar"><span class="l">${esc(i.l)}</span><span class="t"><i style="width:${(i.v / max * 100).toFixed(1)}%;background:${PAL[j % PAL.length]}"></i></span><span class="v m">${E0(i.v)}</span></div>`).join('')}</div>`;
+  }
+  // en mode discret, seuls les montants sont floutés (pas les catégories)
+  const masquer = h => String(h || '').replace(/(^|[^\w,.])([-+−]?\d[\d\s\u00a0\u202f]*(?:[,.]\d+)?[\s\u00a0\u202f]?€)/g, '$1<span class="m">$2</span>');
+  function bulle(m, i) {
+    if (m.de === 'moi') return `<div class="bul moi">${esc(m.texte)}</div>`;
+    const r = m.r || {};
+    const actions = (r.actions || []).length && !m.fait ? `<div class="ia-acts">${r.actions.map((a, j) => `<button class="btn small ${a.secondaire ? '' : 'primary'}" data-a="ia-act" data-m="${i}" data-j="${j}">${a.secondaire ? esc(a.label) : '+ ' + esc(a.label)}</button>`).join('')}${r.saisie && r.saisie.type !== 'vers' ? `<button class="btn small" data-a="ia-autre" data-m="${i}">Autre…</button>` : ''}</div>` : m.fait ? `<div class="ia-ok">✓ ${masquer(esc(m.fait))}</div>` : '';
+    const liste = (r.liste || []).length ? `<div class="ia-liste">${r.liste.map(x => `<div><span class="dim">${C.isoFr(x.d).slice(0, 5)}</span><span>${esc(x.l)}</span><b class="m">${E(x.v)}</b></div>`).join('')}</div>` : '';
+    return `<div class="bul ia ${r.ton ? 't-' + r.ton : ''}"><div>${masquer(r.html)}</div>${barresIA(r.chart)}${liste}${actions}</div>`;
+  }
+  function vueAssistant() {
+    const ms = st.ia.msgs, dern = ms.length ? ms[ms.length - 1] : null;
+    const sugg = dern && dern.r && dern.r.suggestions ? dern.r.suggestions : ['Fais-moi un bilan', 'Combien il me reste ?', 'Où part mon argent ?', 'Donne-moi des conseils', 'Que sais-tu faire ?'];
+    return top('Assistant', true, `<button class="ibtn" data-a="ia-effacer" aria-label="Effacer">${svg('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/>')}</button>`) + `<div class="view ia-view">
+      <div class="dim" style="font-size:12px;text-align:center;margin:-4px 0 12px">IA locale · calculée sur ton iPhone, rien n’est envoyé</div>
+      <div id="ia-fil">${ms.length ? ms.map(bulle).join('') : `<div class="bul ia">Bonjour${st.data.settings.prenom ? ' ' + esc(st.data.settings.prenom) : ''} 👋 Pose-moi une question sur ton budget, ou écris une dépense comme « <b>12,90 kebab</b> » : je la classe et je l’envoie à ton PC.</div>`}</div></div>
+      <div class="ia-bas"><div class="ia-sugg">${sugg.map(q => `<button data-a="ia-sugg" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+      <div class="ia-in"><input id="ia-q" placeholder="Écris ou dicte ta question…" autocomplete="off" enterkeyhint="send"><button class="btn primary" data-a="ia-envoyer" aria-label="Envoyer">↑</button></div></div>`;
+  }
+  function demanderIA(q) {
+    q = String(q || '').trim(); if (!q) return;
+    st.ia.msgs.push({ de: 'moi', texte: q });
+    let r; try { r = C.IA.repondre({ data: st.data, comp: st.comp, today: C.todayISO() }, q, st.ia.etat); } catch (e) { r = { html: 'Oups : ' + esc(e.message) }; }
+    st.ia.etat = r.etat || st.ia.etat;
+    st.ia.msgs.push({ de: 'ia', r: { html: r.html, chart: r.chart, liste: r.liste, actions: r.actions, saisie: r.saisie, suggestions: r.suggestions, ton: r.ton } });
+    st.ia.msgs = st.ia.msgs.slice(-40); LS.set('iaMsgs', st.ia.msgs);
+    rendre(); setTimeout(() => { window.scrollTo(0, document.body.scrollHeight); }, 30);
+  }
+  async function ajouterDepuisIA(s, propose) {
+    const op = s.type === 'vers' ? { t: 'vers', date: s.date, montant: s.montant, ligne: s.ligne, com: s.com || '' } : { t: s.type, date: s.date, montant: s.montant, cat: s.cat, com: s.com || '' };
+    if (propose && s.cat && propose.cat !== s.cat && s.com) await ajouterOp({ t: 'regle', motif: s.com, cat: s.cat });
+    await ajouterOp(op);
+    return s.type === 'vers' ? `Versement ${E(s.montant)} · ${s.ligne}` : `${s.cat} · ${E(s.montant)}`;
   }
 
   // ---------- Plus ----------
@@ -429,11 +482,12 @@
     if (!st.cfg) { app.innerHTML = vueCode(); return; }
     if (!st.key) { app.innerHTML = vueMotDePasse(); return; }
     if (!st.data) { app.innerHTML = vueAttente(); return; }
-    const V = { accueil: vueAccueil, budget: vueBudget, saisir: vueSaisir, invest: vueInvest, plus: vuePlus, journal: vueJournal, comptes: vueComptes, abos: vueAbos, voyages: vueVoyages, defis: vueDefis, reglages: vueReglages }[st.route] || vueAccueil;
+    const V = { assistant: vueAssistant, accueil: vueAccueil, budget: vueBudget, saisir: vueSaisir, invest: vueInvest, plus: vuePlus, journal: vueJournal, comptes: vueComptes, abos: vueAbos, voyages: vueVoyages, defis: vueDefis, reglages: vueReglages }[st.route] || vueAccueil;
     let html;
     try { html = V(); } catch (e) { console.error(e); html = top('Oups', true) + `<div class="view"><div class="banner err">Affichage impossible : ${esc(e.message)}</div></div>`; }
-    app.innerHTML = html + (st.route === 'saisir' ? '' : nav());
-    if (st.route === 'saisir') { const i = $('#f-mt'); if (i && !st.form.mt) setTimeout(() => i.focus(), 120); }
+    app.innerHTML = html + (st.route === 'saisir' || st.route === 'assistant' ? '' : nav());
+    if (st.route === 'assistant') { setTimeout(() => { window.scrollTo(0, document.body.scrollHeight); }, 20); }
+    if (st.route === 'saisir') { const i = $('#f-mt'); if (i && !st.form.mt && !st.form.phrase) setTimeout(() => i.focus(), 120); }
   }
   function feuille(html) {
     const b = document.createElement('div'); b.className = 'sheet-back'; b.innerHTML = `<div class="sheet"><div class="grab"></div>${html}</div>`;
@@ -449,7 +503,7 @@
   }
 
   // ---------- Actions ----------
-  function memForm() { const f = st.form, a = $('#f-mt'), d = $('#f-date'), c = $('#f-com'); if (a) f.mt = a.value; if (d) f.date = d.value; if (c) f.com = c.value; }
+  function memForm() { const f = st.form, a = $('#f-mt'), d = $('#f-date'), c = $('#f-com'), p = $('#f-phrase'); if (a) f.mt = a.value; if (d) f.date = d.value; if (c) f.com = c.value; if (p) f.phrase = p.value; }
   const A = {
     back: retour,
     sync: () => synchroniser(true),
@@ -461,6 +515,18 @@
     'f-ligne': el => { memForm(); st.form.ligne = el.dataset.v; rendre(); },
     'f-compte': el => { memForm(); st.form.compte = el.dataset.v; rendre(); },
     enregistrer,
+    'ia-envoyer': () => { const q = $('#ia-q'); if (q) demanderIA(q.value); },
+    'ia-sugg': el => demanderIA(el.dataset.q),
+    'ia-effacer': () => { st.ia.msgs = []; st.ia.etat = {}; LS.set('iaMsgs', []); rendre(); },
+    'ia-act': async el => {
+      const m = st.ia.msgs[+el.dataset.m], a = m && m.r.actions[+el.dataset.j]; if (!a) return;
+      m.fait = 'Ajouté · ' + await ajouterDepuisIA(a.saisie, m.r.saisie) + ' (envoyé au PC)'; LS.set('iaMsgs', st.ia.msgs); rendre(); toast('Ajouté ✓');
+    },
+    'ia-autre': el => {
+      const m = st.ia.msgs[+el.dataset.m], s = m && m.r.saisie; if (!s) return;
+      const cats = catsDe(s.type), b = feuille(`<h3>Quelle catégorie ?</h3><div class="dim" style="font-size:13px;margin-bottom:10px">Je retiendrai ton choix pour « ${esc(s.com || '')} ».</div><div class="chipsel">${cats.map(c => `<button data-c="${esc(c)}" class="${c === s.cat ? 'on' : ''}">${esc(c)}</button>`).join('')}</div>`);
+      b.addEventListener('click', async e => { const c = e.target.closest('[data-c]'); if (!c) return; b.remove(); m.fait = 'Ajouté · ' + await ajouterDepuisIA(Object.assign({}, s, { cat: c.dataset.c }), s) + ' (envoyé au PC)'; LS.set('iaMsgs', st.ia.msgs); rendre(); toast('Ajouté ✓ · catégorie retenue'); });
+    },
     'maj-solde': el => { st.form = { type: 'solde', compte: el.dataset.id, date: C.todayISO() }; aller('saisir'); },
     'abo-paye': async el => { const a = st.data.abonnements.find(x => x.id === el.dataset.id); if (!a) return; if (!(await confirmer(`${a.nom} payé ?`, `${E(a.montant)} seront ajoutés au budget${a.categorie ? ` (« ${a.categorie} »)` : ''} et la prochaine échéance sera décalée.`, 'Oui, payé'))) return; await ajouterOp({ t: 'abo', abo: a.id, date: a.prochaine || C.todayISO() }); toast('Abonnement payé ✓'); rendre(); },
     theme: el => { LS.set('theme', el.dataset.v); rendre(); },
@@ -497,8 +563,24 @@
     const g = e.target.closest('[data-go]'); if (g) { if (g.dataset.go === 'saisir' && st.route !== 'saisir') st.form = { type: (st.form && st.form.type) || 'dep', cat: st.form && st.form.cat, date: C.todayISO() }; aller(g.dataset.go); return; }
     const a = e.target.closest('[data-a]'); if (a && A[a.dataset.a]) { e.preventDefault(); A[a.dataset.a](a); }
   });
+  let phraseTimer = null;
+  document.addEventListener('input', e => {
+    if (e.target.id !== 'f-phrase') return;
+    clearTimeout(phraseTimer);
+    phraseTimer = setTimeout(() => {
+      const v = e.target.value, s = C.IA.analyserSaisie(st.data, v, C.todayISO()); memForm(); st.form.phrase = v;
+      if (s && v.trim()) {
+        if (s.type !== st.form.type && st.form.type !== 'solde') st.form.type = s.type;
+        if (s.montant) st.form.mt = (Number.isInteger(s.montant) ? String(s.montant) : s.montant.toFixed(2)).replace('.', ',');
+        st.form.date = s.date; if (s.com) st.form.com = s.com;
+        if (s.type === 'vers') { if (s.ligne) st.form.ligne = s.ligne; } else if (s.cat) { st.form.cat = s.cat; st.form.phraseCat = s.cat; }
+        st.form.phraseInfo = `Compris : <b class="m">${s.montant ? E(s.montant) : '?'}</b> · ${esc(s.type === 'vers' ? s.ligne || '?' : s.cat || '?')} · ${C.isoFr(s.date)}${s.confiance < 0.5 ? ' · <span class="warn">vérifie la catégorie</span>' : ''}`;
+      } else st.form.phraseInfo = '';
+      rendre(); const p = $('#f-phrase'); if (p) { p.focus(); p.setSelectionRange(p.value.length, p.value.length); }
+    }, 450);
+  });
   document.addEventListener('input', e => { if (e.target.id === 'q') { st.q = e.target.value; const pos = e.target.selectionStart; rendre(); const q = $('#q'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } } });
-  document.addEventListener('keydown', e => { if (e.key === 'Enter') { if (e.target.id === 'pass') A['valider-pass'](); else if (e.target.id === 'f-mt' || e.target.id === 'f-com') { e.preventDefault(); enregistrer(); } } });
+  document.addEventListener('keydown', e => { if (e.key === 'Enter') { if (e.target.id === 'ia-q') { e.preventDefault(); demanderIA(e.target.value); return; } if (e.target.id === 'pass') A['valider-pass'](); else if (e.target.id === 'f-mt' || e.target.id === 'f-com') { e.preventDefault(); enregistrer(); } } });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) synchroniser(); });
   window.addEventListener('online', () => synchroniser());
   setInterval(() => { if (!document.hidden) synchroniser(); }, 90e3);

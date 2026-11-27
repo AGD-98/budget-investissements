@@ -529,7 +529,7 @@
   function fmtEur(v, dec) {
     if (v === null || v === undefined || v === '' || isNaN(v)) return '–';
     const d = dec === undefined ? 2 : dec;
-    return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }).format(v) + ' €';
+    return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }).format(v) + '\u00a0€';
   }
   function fmtNum(v, dec) { if (v === null || v === undefined || isNaN(v)) return '–'; return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: dec || 0, maximumFractionDigits: dec || 0 }).format(v); }
   function fmtPct(v, dec) { if (v === null || v === undefined || v === '' || isNaN(v)) return '–'; return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: dec === undefined ? 1 : dec, maximumFractionDigits: dec === undefined ? 1 : dec }).format(v * 100) + ' %'; }
